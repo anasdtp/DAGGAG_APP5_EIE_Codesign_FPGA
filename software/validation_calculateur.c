@@ -33,6 +33,16 @@
 #define IOWR(base, data) (*((volatile uint32_t*)(base)) = (uint32_t)(data))
 #define IORD(base)       (*((volatile uint32_t*)(base)))
 
+static const char* op_name(uint8_t op)
+{
+  switch (op & 0x3u) {
+    case 0u: return "ADD";
+    case 1u: return "SUB";
+    case 2u: return "AMP_X2";
+    default: return "ATT_DIV2";
+  }
+}
+
 static uint8_t ref_model(uint8_t a, uint8_t b, uint8_t op, uint8_t* ovf)
 {
   uint16_t tmp;
@@ -91,8 +101,19 @@ int main(void)
   const uint8_t a_vals[] = {0u, 1u, 10u, 127u, 200u, 240u, 255u};
   const uint8_t b_vals[] = {0u, 1u,  5u,  64u, 100u, 200u, 255u};
   unsigned errors = 0u;
+  unsigned tests_run = 0u;
 
   printf("=== Validation calculateur cable via Nios/Qsys ===\n");
+  printf("[INFO] Mapping MMIO:\n");
+  printf("       SENSOR_CONTROL=0x%08X SENSOR_STATUS=0x%08X SENSOR_DATA6=0x%08X\n",
+         (unsigned)SENSOR_CONTROL_BASE,
+         (unsigned)SENSOR_STATUS_BASE,
+         (unsigned)SENSOR_DATA6_BASE);
+  printf("       KP=0x%08X KD=0x%08X START_SL=0x%08X\n",
+         (unsigned)KP_BASE,
+         (unsigned)KD_BASE,
+         (unsigned)START_SL_BASE);
+  printf("[INFO] Status bits: done=b0 overflow=b1 sensor_ready=b2\n\n");
 
   IOWR(SENSOR_CONTROL_BASE, 0u);
   IOWR(START_SL_BASE, 0u);
@@ -100,6 +121,8 @@ int main(void)
 
   uint8_t op = 0u;
   for (op = 0u; op < 4u; ++op) {
+    printf("[OP] %s (%u)\n", op_name(op), (unsigned)op);
+
     unsigned i = 0u;
     for (i = 0u; i < (sizeof(a_vals) / sizeof(a_vals[0])); ++i) {
       uint8_t a = a_vals[i];
@@ -111,6 +134,12 @@ int main(void)
       uint32_t st;
       uint32_t timeout;
 
+            ++tests_run;
+            printf("  [TEST %02u] a=%3u b=%3u -> ",
+              tests_run,
+              (unsigned)a,
+              (unsigned)b);
+
       start_calc(op, 0u, a, b);
 
       timeout = 2000000u;
@@ -121,7 +150,7 @@ int main(void)
 
       if (timeout == 0u) {
         ++errors;
-        printf("TIMEOUT op=%u a=%u b=%u (status=0x%02X)\n", op, a, b, (unsigned)st);
+        printf("TIMEOUT (status=0x%02X)\n", (unsigned)st);
         continue;
       }
 
@@ -131,13 +160,28 @@ int main(void)
       sw_res = ref_model(a, b, op, &sw_ovf);
       if ((hw_res != sw_res) || (hw_ovf != sw_ovf)) {
         ++errors;
-        printf("ERR op=%u a=%u b=%u | hw=(%u,%u) sw=(%u,%u)\n",
-               op, a, b, hw_res, hw_ovf, sw_res, sw_ovf);
+        printf("ERR hw=(res:%3u ovf:%u) sw=(res:%3u ovf:%u) status=0x%02X\n",
+               (unsigned)hw_res,
+               (unsigned)hw_ovf,
+               (unsigned)sw_res,
+               (unsigned)sw_ovf,
+               (unsigned)st);
+      } else {
+        printf("OK  hw=(res:%3u ovf:%u) sw=(res:%3u ovf:%u) status=0x%02X\n",
+               (unsigned)hw_res,
+               (unsigned)hw_ovf,
+               (unsigned)sw_res,
+               (unsigned)sw_ovf,
+               (unsigned)st);
       }
 
       IOWR(LEDS_BASE, (uint32_t)hw_res);
     }
+
+    printf("\n");
   }
+
+  printf("[SUMMARY] tests=%u errors=%u\n", tests_run, errors);
 
   if (errors == 0u) {
     printf("OK: no HW/SW mismatch.\n");
