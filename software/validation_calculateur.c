@@ -1,18 +1,34 @@
 /*
  * validation_calculateur.c
- * Software validation for the arithmetic hardware block.
+ * Validation SW du calculateur cable via Nios II + PIOs Qsys.
  *
- * Update BASE addresses with values generated in your own system.h.
+ * Mapping utilise (nios_system_sdram.sopcinfo):
+ * - sensor_control @ 0x1020 (out, 8 bits)
+ * - sensor_status  @ 0x1030 (in, 8 bits)
+ * - sensor_data6   @ 0x10A0 (in, 8 bits) -> resultat calculateur
+ * - kp             @ 0x10B0 (out, 12 bits) -> operande i (8 LSB)
+ * - start_sl       @ 0x1110 (out, 1 bit)  -> impulsion start
+ * - kd             @ 0x1120 (out, 12 bits) -> operande j (8 LSB)
  */
 
 #include <stdint.h>
 #include <stdio.h>
 
-#define CALC_CTRL_BASE    0x000010B0u  /* bit0=start, bits2:1=op_sel */
-#define CALC_DATA_I_BASE  0x000010C0u  /* data_ir[7:0] */
-#define CALC_DATA_J_BASE  0x000010D0u  /* data_jr[7:0] */
-#define CALC_RES_BASE     0x000010E0u  /* result[7:0] */
-#define CALC_STAT_BASE    0x000010F0u  /* bit0=ready, bit1=overflow */
+#define SENSOR_CONTROL_BASE 0x00001020u
+#define SENSOR_STATUS_BASE  0x00001030u
+#define SENSOR_DATA6_BASE   0x000010A0u
+#define KP_BASE             0x000010B0u
+#define START_SL_BASE       0x00001110u
+#define KD_BASE             0x00001120u
+
+#define LEDS_BASE           0x00002010u
+
+#define CTRL_OP_MASK        0x03u
+#define CTRL_SRC_SENSOR     0x04u /* bit2: 1=sensor0/1, 0=kp/kd */
+
+#define STATUS_DONE_MASK    0x01u
+#define STATUS_OVF_MASK     0x02u
+#define STATUS_SENSOR_RDY   0x04u
 
 #define IOWR(base, data) (*((volatile uint32_t*)(base)) = (uint32_t)(data))
 #define IORD(base)       (*((volatile uint32_t*)(base)))
@@ -51,17 +67,41 @@ static uint8_t ref_model(uint8_t a, uint8_t b, uint8_t op, uint8_t* ovf)
   }
 }
 
+static void start_calc(uint8_t op, uint8_t use_sensor_operands, uint8_t a, uint8_t b)
+{
+  uint32_t ctrl;
+
+  IOWR(KP_BASE, (uint32_t)a);
+  IOWR(KD_BASE, (uint32_t)b);
+
+  ctrl = (uint32_t)(op & CTRL_OP_MASK);
+  if (use_sensor_operands != 0u) {
+    ctrl |= CTRL_SRC_SENSOR;
+  }
+
+  IOWR(SENSOR_CONTROL_BASE, ctrl);
+
+  /* Rising edge expected by VHDL on start_sl */
+  IOWR(START_SL_BASE, 1u);
+  IOWR(START_SL_BASE, 0u);
+}
+
 int main(void)
 {
   const uint8_t a_vals[] = {0u, 1u, 10u, 127u, 200u, 240u, 255u};
   const uint8_t b_vals[] = {0u, 1u,  5u,  64u, 100u, 200u, 255u};
   unsigned errors = 0u;
 
-  printf("=== Validation calculateur cable ===\n");
-  IOWR(CALC_CTRL_BASE, 0u);
+  printf("=== Validation calculateur cable via Nios/Qsys ===\n");
 
-  for (uint8_t op = 0u; op < 4u; ++op) {
-    for (unsigned i = 0u; i < (sizeof(a_vals) / sizeof(a_vals[0])); ++i) {
+  IOWR(SENSOR_CONTROL_BASE, 0u);
+  IOWR(START_SL_BASE, 0u);
+  IOWR(LEDS_BASE, 0x00u);
+
+  uint8_t op = 0u;
+  for (op = 0u; op < 4u; ++op) {
+    unsigned i = 0u;
+    for (i = 0u; i < (sizeof(a_vals) / sizeof(a_vals[0])); ++i) {
       uint8_t a = a_vals[i];
       uint8_t b = b_vals[i];
       uint8_t sw_res;
@@ -69,19 +109,24 @@ int main(void)
       uint8_t hw_res;
       uint8_t hw_ovf;
       uint32_t st;
+      uint32_t timeout;
 
-      IOWR(CALC_DATA_I_BASE, a);
-      IOWR(CALC_DATA_J_BASE, b);
+      start_calc(op, 0u, a, b);
 
-      IOWR(CALC_CTRL_BASE, (uint32_t)((op << 1) | 0x1u));
-      IOWR(CALC_CTRL_BASE, (uint32_t)(op << 1));
-
+      timeout = 2000000u;
       do {
-        st = IORD(CALC_STAT_BASE);
-      } while ((st & 0x1u) == 0u);
+        st = IORD(SENSOR_STATUS_BASE);
+        --timeout;
+      } while (((st & STATUS_DONE_MASK) == 0u) && (timeout != 0u));
 
-      hw_res = (uint8_t)(IORD(CALC_RES_BASE) & 0xFFu);
-      hw_ovf = (uint8_t)((st >> 1) & 0x1u);
+      if (timeout == 0u) {
+        ++errors;
+        printf("TIMEOUT op=%u a=%u b=%u (status=0x%02X)\n", op, a, b, (unsigned)st);
+        continue;
+      }
+
+      hw_res = (uint8_t)(IORD(SENSOR_DATA6_BASE) & 0xFFu);
+      hw_ovf = (uint8_t)((st & STATUS_OVF_MASK) ? 1u : 0u);
 
       sw_res = ref_model(a, b, op, &sw_ovf);
       if ((hw_res != sw_res) || (hw_ovf != sw_ovf)) {
@@ -89,6 +134,8 @@ int main(void)
         printf("ERR op=%u a=%u b=%u | hw=(%u,%u) sw=(%u,%u)\n",
                op, a, b, hw_res, hw_ovf, sw_res, sw_ovf);
       }
+
+      IOWR(LEDS_BASE, (uint32_t)hw_res);
     }
   }
 

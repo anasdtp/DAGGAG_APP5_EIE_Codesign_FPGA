@@ -1,6 +1,8 @@
 # Validation logicielle du calculateur
 
-Fichier: validation_calculateur.c
+Fichiers:
+- validation_calculateur.c: test automatique (plusieurs vecteurs)
+- manual_calculateur.c: test manuel interactif (saisie operation + operandes)
 
 Objectif:
 - Initialiser l'interface calculateur
@@ -12,8 +14,8 @@ Objectif:
 
 Avant compilation:
 - Regenerer votre systeme Platform Designer
-- Ouvrir le system.h de votre BSP
-- Remplacer les macros CALC_*_BASE par les vraies adresses
+- Regenerer le BSP (system.h)
+- Verifier les adresses MMIO (SENSOR_CONTROL_BASE, SENSOR_STATUS_BASE, etc.)
 
 ## Build type (exemple)
 
