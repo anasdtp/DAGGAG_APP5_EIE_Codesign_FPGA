@@ -1,13 +1,47 @@
+# Quartus build databases and temporary folders
 db/
 incremental_db/
 output_files/
+greybox_tmp/
+qdb/
+.qsys_edit/
+
+# Quartus reports, logs, and temp files
 *.rpt
 *.summary
 *.smsg
 *.qws
+*.qdf
 *.jdi
-*.sof
-*.pof
 *.srf
 *.done
 *.bak
+*.log
+*.pin
+
+# FPGA programming outputs
+*.sof
+*.pof
+*.jam
+*.jbc
+*.rbf
+
+# Platform Designer / Qsys generated outputs
+altera/
+nios_system_sdram/synthesis/
+
+# Nios II software build artifacts
+BSP/
+obj/
+software/**/obj/
+software/**/Debug/
+software/**/Release/
+*.o
+*.a
+*.elf
+*.axf
+*.map
+*.bin
+*.hex
+*.srec
+*.objdump
