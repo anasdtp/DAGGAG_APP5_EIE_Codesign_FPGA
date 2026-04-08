@@ -5,6 +5,8 @@
   <columns>
    <connections preferredWidth="30" />
    <irq preferredWidth="34" />
+   <export preferredWidth="64" />
+   <inputclock preferredWidth="110" />
   </columns>
  </systemtable>
  <clocktable>
@@ -15,5 +17,5 @@
   </columns>
  </clocktable>
  <library expandedCategories="Library,Project" />
- <window width="1616" height="868" x="-8" y="-8" />
+ <window width="1600" height="852" x="0" y="0" />
 </preferences>
