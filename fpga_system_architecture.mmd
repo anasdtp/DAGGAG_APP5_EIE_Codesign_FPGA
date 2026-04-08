@@ -1,0 +1,37 @@
+flowchart TB
+  subgraph EXT["Peripherique externe"]
+    ADC["ADC LTC2308<br/>SPI 12 bits"]
+  end
+
+  subgraph NIOS["Domaine Logiciel (Nios II - Qsys)"]
+    CPU["Programme C<br/>Validation calculateur"]
+    PIO_SW["PIO Switches [7:0]"]
+    PIO_RES["PIO Resultat<br/>(ready, overflow, result[7:0])"]
+    PIO_DATA["PIO Capteurs<br/>(sensor_data0..6)"]
+  end
+
+  subgraph HW["Domaine Hardware (Cable FPGA)"]
+    CAPT["capteurs_sol<br/>(8 canaux -> export 7)"]
+    CALC["calculateur_cable<br/>4 operations"]
+    CLK["CLOCK_50<br/>horloge commune"]
+  end
+
+  EXT -->|"ADC_CONVST<br/>ADC_SCK<br/>ADC_SDI"| CAPT
+  CAPT -->|"ADC_SDO"| EXT
+
+  CPU -->|"start<br/>op_sel[1:0]"| PIO_SW
+  PIO_SW -->|"data_ir[7:0]<br/>data_jr[7:0]"| CALC
+
+  CAPT -->|"data_ready<br/>data0..6[7:0]"| PIO_DATA
+  PIO_DATA -->|"lecture logicielle"| CPU
+
+  CALC -->|"result[7:0]<br/>overflow<br/>data_ready"| PIO_RES
+  PIO_RES -->|"lecture logicielle"| CPU
+
+  CLK -->|"50 MHz"| CALC
+  CLK -->|"50 MHz"| CAPT
+  CLK -->|"clk"| NIOS
+
+  style NIOS fill:#4da6ff
+  style HW fill:#ff9999
+  style EXT fill:#cccccc
